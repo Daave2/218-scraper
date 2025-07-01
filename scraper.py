@@ -370,7 +370,7 @@ async def post_to_chat_webhook(data: dict):
                 "header": {
                     "title": f"{store_name} Metrics Report",
                     "subtitle": timestamp,
-                    "imageUrl": "https://i.imgur.com/u0e3d2x.png",
+                    "imageUrl": "https://i.pinimg.com/originals/01/ca/da/01cada77a0a7d326d85b7969fe26a728.jpg",
                     "imageType": "CIRCLE"
                 },
                 "sections": [
