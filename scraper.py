@@ -64,7 +64,6 @@ except FileNotFoundError:
 DEBUG_MODE       = config.get('debug', False)
 LOGIN_URL        = config['login_url']
 CHAT_WEBHOOK_URL = config.get('chat_webhook_url')
-SUMMARY_CHAT_WEBHOOK_URL = config.get('summary_chat_webhook_url')
 TARGET_STORE     = config['target_store']
 
 # --- Emojis and Colors for Chat ---
@@ -402,59 +401,6 @@ async def post_to_chat_webhook(data: dict):
     except Exception as e:
         app_logger.error(f"Error posting to chat webhook: {e}", exc_info=True)
 
-async def post_summary_webhook(data: dict):
-    """Send only the overall metrics to the secondary webhook."""
-    if not SUMMARY_CHAT_WEBHOOK_URL:
-        return
-
-    overall = data.get("overall")
-    if not overall:
-        app_logger.warning("post_summary_webhook called with incomplete data.")
-        return
-
-    store_name = overall.get("store", "Unknown Store")
-    timestamp = datetime.now(LOCAL_TIMEZONE).strftime("%A %d %B, %H:%M")
-    runtime = datetime.now(LOCAL_TIMEZONE).strftime("%H:%M")
-
-    summary_text = (
-        f"  •  <b>UPH (Store Avg):</b> {_format_metric_with_emoji(overall.get('uph'), UPH_THRESHOLD, is_uph=True)}<br>"
-        f"  •  <b>Lates (Store Avg):</b> {_format_metric_with_emoji(overall.get('lates'), LATES_THRESHOLD)}<br>"
-        f"  •  <b>INF (Store Avg):</b> {_format_metric_with_emoji(overall.get('inf'), INF_THRESHOLD)}<br>"
-        f"  •  <b>Total Orders:</b> {overall.get('orders')}<br>"
-        f"  •  <b>Total Units:</b> {overall.get('units')}"
-    )
-
-    payload = {
-        "cardsV2": [{
-            "cardId": f"store-summary-{store_name.replace(' ', '-')}-overall",
-            "card": {
-                "header": {
-                    "title": f"Amazon Metrics Report Monday: Day so far upto {runtime}",
-                    "subtitle": timestamp,
-                    "imageUrl": "https://i.pinimg.com/originals/01/ca/da/01cada77a0a7d326d85b7969fe26a728.jpg",
-                    "imageType": "CIRCLE"
-                },
-                "sections": [
-                    {
-                        "header": "Store-Wide Performance (Weighted Avg)",
-                        "widgets": [{"textParagraph": {"text": summary_text}}]
-                    }
-                ]
-            }
-        }]
-    }
-
-    try:
-        timeout = aiohttp.ClientTimeout(total=30)
-        ssl_context = ssl.create_default_context(cafile=certifi.where())
-        async with aiohttp.ClientSession(timeout=timeout, connector=aiohttp.TCPConnector(ssl=ssl_context)) as session:
-            async with session.post(SUMMARY_CHAT_WEBHOOK_URL, json=payload) as resp:
-                if resp.status != 200:
-                    error_text = await resp.text()
-                    app_logger.error(f"Summary webhook failed. Status: {resp.status}, Response: {error_text}")
-    except Exception as e:
-        app_logger.error(f"Error posting to summary webhook: {e}", exc_info=True)
-
 
 async def main():
     global playwright, browser
@@ -473,7 +419,6 @@ async def main():
         if scraped_data:
             await log_results(scraped_data)
             await post_to_chat_webhook(scraped_data)
-            await post_summary_webhook(scraped_data)
             app_logger.info("Run completed successfully.")
         else:
             app_logger.error("Run failed: Could not retrieve data for the target store.")
