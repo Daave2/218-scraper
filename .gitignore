@@ -1,0 +1,19 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Local Config & State (Sensitive)
+config.json
+state.json
+
+# Output & Logs
+output/
+app.log
+
+# IDE / Editor specific
+.vscode/
+.idea/
+
+# OS specific
+.DS_Store
