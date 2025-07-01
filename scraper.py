@@ -370,8 +370,8 @@ async def post_to_chat_webhook(data: dict):
             "cardId": f"store-summary-{store_name.replace(' ', '-')}",
             "card": {
                 "header": {
-                    "title": f"Amazon Metrics Report Monday: Day so far upto {runtime}",
-                    "subtitle": timestamp,
+                    "title": f"Amazon Metrics - {store_name}",
+                    "subtitle": f"{timestamp} | Up to {runtime}",
                     "imageUrl": "https://i.pinimg.com/originals/01/ca/da/01cada77a0a7d326d85b7969fe26a728.jpg",
                     "imageType": "CIRCLE"
                 },
@@ -429,8 +429,8 @@ async def post_summary_webhook(data: dict):
             "cardId": f"store-summary-{store_name.replace(' ', '-')}-overall",
             "card": {
                 "header": {
-                    "title": f"Amazon Metrics Report Monday: Day so far upto {runtime}",
-                    "subtitle": timestamp,
+                    "title": f"Amazon Metrics - {store_name}",
+                    "subtitle": f"{timestamp} | Up to {runtime}",
                     "imageUrl": "https://i.pinimg.com/originals/01/ca/da/01cada77a0a7d326d85b7969fe26a728.jpg",
                     "imageType": "CIRCLE"
                 },
