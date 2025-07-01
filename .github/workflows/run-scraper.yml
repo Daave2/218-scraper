@@ -106,6 +106,7 @@ jobs:
         LOGIN_PASSWORD:         ${{ secrets.LOGIN_PASSWORD }}
         OTP_SECRET_KEY:         ${{ secrets.OTP_SECRET_KEY }}
         CHAT_WEBHOOK_URL:       ${{ secrets.CHAT_WEBHOOK_URL }}
+        SUMMARY_CHAT_WEBHOOK_URL: ${{ secrets.SUMMARY_CHAT_WEBHOOK_URL }}
         # --- NEW SECRETS ADDED HERE ---
         TARGET_MERCHANT_ID:     ${{ secrets.TARGET_MERCHANT_ID }}
         TARGET_MARKETPLACE_ID:  ${{ secrets.TARGET_MARKETPLACE_ID }}
@@ -120,6 +121,7 @@ jobs:
           "login_password":  "${LOGIN_PASSWORD}",
           "otp_secret_key":  "${OTP_SECRET_KEY}",
           "chat_webhook_url": "${CHAT_WEBHOOK_URL}",
+          "summary_chat_webhook_url": "${SUMMARY_CHAT_WEBHOOK_URL}",
           "target_store": {
             "merchant_id": "${TARGET_MERCHANT_ID}",
             "marketplace_id": "${TARGET_MARKETPLACE_ID}",
