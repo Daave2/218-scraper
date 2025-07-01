@@ -32,6 +32,12 @@ The scraper can be run locally or through the included GitHub Actions workflow.
    python -m playwright install chromium
    ```
 
+   To run the included unit tests, also install the development requirements:
+
+   ```bash
+   pip install -r requirements-dev.txt
+   ```
+
 2. Copy the example configuration and edit it with your credentials:
 
    ```bash
@@ -49,6 +55,14 @@ python scraper.py
 ```
 
 Logs and scraped data will be saved under the `output/` directory.
+
+## Running Tests
+To execute the unit tests locally, make sure the development requirements are installed:
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
 
 ## GitHub Actions Workflow
 The workflow in `.github/workflows/run-scraper.yml` installs dependencies, creates
