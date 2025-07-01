@@ -98,6 +98,11 @@ jobs:
     - name: Install Playwright browsers & deps
       run: python -m playwright install --with-deps chromium
 
+    - name: Run tests
+      run: |
+        pip install pytest
+        pytest -q
+
     - name: Build runtime config from Secrets
       # This step is now updated to include the target_store information
       env:
