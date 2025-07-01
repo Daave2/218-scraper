@@ -308,7 +308,11 @@ async def scrape_store_data(browser: Browser, store_info: dict, storage_state: d
                 'inf': f"{overall_inf:.1f} %",
                 'lates': f"{overall_lates:.1f} %"
             }
-            sorted_shoppers = sorted(shopper_stats, key=lambda x: x['name'])
+            # Sort shoppers by their INF percentage, lowest to highest
+            sorted_shoppers = sorted(
+                shopper_stats,
+                key=lambda x: float(x["inf"].replace("%", "").strip())
+            )
             app_logger.info(f"Aggregated data for {len(sorted_shoppers)} shoppers in {store_name}.")
 
             return {"overall": overall_metrics, "shoppers": sorted_shoppers}
