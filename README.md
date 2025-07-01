@@ -51,7 +51,27 @@ python scraper.py
 Logs and scraped data will be saved under the `output/` directory.
 
 ## GitHub Actions Workflow
-The workflow in `.github/workflows/run-scraper.yml` installs dependencies, creates `config.json` from repository secrets and runs the scraper on a schedule. It checks the current UK time against `UK_TARGET_HOURS` before starting.
+The workflow in `.github/workflows/run-scraper.yml` installs dependencies, creates
+`config.json` from repository secrets and runs the scraper on a schedule. A small
+"check-time" job executes every hour and only allows the main scraper job to
+continue if the current UK time matches one of the hours listed in the
+`UK_TARGET_HOURS` environment variable.
+
+`UK_TARGET_HOURS` is defined near the top of the workflow file and contains a
+space-separated list of hours in 24‑hour format:
+
+```yaml
+env:
+  UK_TARGET_HOURS: '10 14 15 20'
+```
+
+In this example the scraper would run at 10:00, 14:00, 15:00 and 20:00 London
+time. To change the schedule simply edit this list. For instance, to run only at
+09:00 and 17:00 you would set:
+
+```yaml
+  UK_TARGET_HOURS: '09 17'
+```
 
 Secrets expected by the workflow include `LOGIN_URL`, `LOGIN_EMAIL`, `LOGIN_PASSWORD`, `OTP_SECRET_KEY`, `CHAT_WEBHOOK_URL`, `SUMMARY_CHAT_WEBHOOK_URL`, `TARGET_MERCHANT_ID`, `TARGET_MARKETPLACE_ID` and `TARGET_STORE_NAME`.
 
