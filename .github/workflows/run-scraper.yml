@@ -24,7 +24,7 @@ env:
   # --- DEFINE YOUR TARGET UK HOURS HERE (24-hour format, space-separated) ---
   # The main job will only run if the current UK hour is in this list.
   # Example: '08 12 16' for 8am, 12pm, and 4pm.
-  UK_TARGET_HOURS: '08 14 18'
+  UK_TARGET_HOURS: '10 14 19'
 
 jobs:
   # ==============================================================================
