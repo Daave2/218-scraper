@@ -335,6 +335,7 @@ async def post_to_chat_webhook(data: dict):
 
     store_name = overall.get("store", "Unknown Store")
     timestamp = datetime.now(LOCAL_TIMEZONE).strftime("%A %d %B, %H:%M")
+    runtime = datetime.now(LOCAL_TIMEZONE).strftime("%H:%M")
     
     summary_text = (f"  •  <b>UPH (Store Avg):</b> {_format_metric_with_emoji(overall.get('uph'), UPH_THRESHOLD, is_uph=True)}<br>"
                     f"  •  <b>Lates (Store Avg):</b> {_format_metric_with_emoji(overall.get('lates'), LATES_THRESHOLD)}<br>"
@@ -368,7 +369,7 @@ async def post_to_chat_webhook(data: dict):
             "cardId": f"store-summary-{store_name.replace(' ', '-')}",
             "card": {
                 "header": {
-                    "title": f"{store_name} Metrics Report",
+                    "title": f"Amazon Metrics Report Monday: Day so far upto {runtime}",
                     "subtitle": timestamp,
                     "imageUrl": "https://i.pinimg.com/originals/01/ca/da/01cada77a0a7d326d85b7969fe26a728.jpg",
                     "imageType": "CIRCLE"
