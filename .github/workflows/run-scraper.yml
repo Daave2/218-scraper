@@ -102,7 +102,6 @@ jobs:
 
     - name: Build runtime config from Secrets
       env:
-        FORM_URL:        ${{ secrets.FORM_URL }}
         LOGIN_URL:       ${{ secrets.LOGIN_URL }}
         SECRET_KEY:      ${{ secrets.SECRET_KEY }}
         LOGIN_EMAIL:     ${{ secrets.LOGIN_EMAIL }}
