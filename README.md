@@ -1,14 +1,10 @@
 # Amazon Seller Central Scraper
 
-This repository contains an asynchronous scraper built with Playwright. It logs
-into Amazon Seller Central, collects dashboard metrics for a list of stores and
-submits them to a Google Form so they can be aggregated in Google Sheets.
+This repository contains an asynchronous Playwright script that logs in to Amazon Seller Central and gathers dashboard metrics for a single store. Results are written to `output/submissions.jsonl` and can optionally be posted to Google Chat via webhook.
 
-The code may be executed locally or through the included GitHub Actions
-workflow.
+The scraper can be run locally or through the included GitHub Actions workflow.
 
 ## Table of Contents
-
 - [Features](#features)
 - [Requirements](#requirements)
 - [Local Setup](#local-setup)
@@ -18,22 +14,17 @@ workflow.
 - [Notes](#notes)
 
 ## Features
-
-- Automates the sign-in flow for Seller Central including two-step verification
-- Collects metrics for multiple stores listed in `urls.csv`
-- Posts metrics to a configurable Google Form
-- Supports configurable concurrency and automatic adjustments based on system load
+- Automates the Seller Central sign‑in flow including two‑step verification
+- Collects metrics for a single store configured in `config.json`
 - Produces structured logs in `output/` and rotates `app.log`
-- Optionally posts progress to Google Chat using collapsible cards grouped by timestamped batches. Store names are alphabetized and the standard "Morrisons -" prefix is trimmed for readability. Each store section now highlights metrics in bold bullet lists for a cleaner look.
+- Optionally posts metrics to Google Chat using rich cards
 
 ## Requirements
-
 - Python 3.11
 - Playwright with Chromium browsers
 - See `requirements.txt` for the full list of Python packages
 
 ## Local Setup
-
 1. Install Python dependencies:
 
    ```bash
@@ -48,55 +39,35 @@ workflow.
    # then edit config.json
    ```
 
-   Important fields include your Seller Central login details, the target Google Form URL, and concurrency settings. The example file contains all available keys.
-
-3. Populate `urls.csv` with the stores you want to scrape. Each row uses the following columns:
-   `merchant_id,new_id,store_name,marketplace_id`.
+   At a minimum provide your Seller Central login details, OTP secret and the `target_store` information.
 
 ## Running Locally
-
 Execute the scraper from the command line:
 
 ```bash
 python scraper.py
 ```
 
-Logs and submission data will be saved under the `output/` directory.
+Logs and scraped data will be saved under the `output/` directory.
 
 ## GitHub Actions Workflow
+The workflow in `.github/workflows/run-scraper.yml` installs dependencies, creates `config.json` from repository secrets and runs the scraper on a schedule. It checks the current UK time against `UK_TARGET_HOURS` before starting.
 
-The workflow defined in `.github/workflows/run-scraper.yml` installs dependencies,
-creates a `config.json` from repository secrets and runs the scraper on a
-schedule. It checks the current UK time against `UK_TARGET_HOURS` to decide
-whether to proceed with a run.
-
-Secrets expected by the workflow include `FORM_URL`, `LOGIN_URL`, `SECRET_KEY`,
-`LOGIN_EMAIL`, `LOGIN_PASSWORD`, `OTP_SECRET_KEY`, `CHAT_WEBHOOK_URL` and `SUMMARY_CHAT_WEBHOOK_URL`. These
-map to the fields in `config.example.json`.
+Secrets expected by the workflow include `LOGIN_URL`, `LOGIN_EMAIL`, `LOGIN_PASSWORD`, `OTP_SECRET_KEY`, `CHAT_WEBHOOK_URL`, `SUMMARY_CHAT_WEBHOOK_URL`, `TARGET_MERCHANT_ID`, `TARGET_MARKETPLACE_ID` and `TARGET_STORE_NAME`.
 
 Artifacts such as logs are uploaded for each run and kept for seven days.
 
 ## Configuration Reference
-
 Key options from `config.example.json`:
 
 - `login_email` / `login_password` – Seller Central credentials
-- `otp_secret_key` – secret for generating two-step verification codes
-- `form_url` – Google Form to submit scraped metrics
-- `initial_concurrency` – number of concurrent browser workers
-- `num_form_submitters` – number of HTTP workers sending form data
-- `auto_concurrency` – optional automatic scaling of concurrency limits. When enabled, the scraper adjusts `concurrency_limit` between `min_concurrency` and `max_concurrency` based on CPU and memory load.
-- `chat_webhook_url` – optional Google Chat webhook to post progress messages. When configured, results are grouped into timestamped cards with per-store collapsible sections
-- `summary_chat_webhook_url` – optional second webhook that only receives the overall store metrics without the shopper breakdown
-- `chat_batch_size` – how many store results to group into a single chat card (default: 100)
-- `schedule_times` – optional list of times (HH:MM) to run the scraper when using automation
+- `otp_secret_key` – secret for generating two‑step verification codes
+- `chat_webhook_url` – optional Google Chat webhook for per‑store metrics
+- `summary_chat_webhook_url` – optional second webhook for overall metrics only
 - `debug` – enable verbose logging and save extra screenshots
-- `max_concurrency` / `min_concurrency` – bounds for automatically adjusted concurrency
+- `target_store` – object containing `merchant_id`, `marketplace_id` and `store_name`
 
 See the example file for full details.
 
 ## Notes
-
-The repository excludes `config.json`, `state.json`, and `output/` from version control. These files may contain sensitive information or large log data. Ensure you keep your credentials secure.
-Timestamps recorded by the scraper default to the Europe/London timezone. Modify the `LOCAL_TIMEZONE` constant in `scraper.py` if you prefer a different local time.
-
+The repository excludes `config.json`, `state.json` and `output/` from version control. These files may contain sensitive information or large log data. Timestamps recorded by the scraper default to the Europe/London timezone. Modify the `LOCAL_TIMEZONE` constant in `scraper.py` if you prefer a different local time.
