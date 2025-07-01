@@ -1,4 +1,4 @@
-name: Run Amazon INF Scraper
+name: Run Playwright Scraper
 
 # ==============================================================================
 # ─── TRIGGERS ─────────────────────────────────────────────────────────────────
@@ -21,16 +21,16 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.11'
-  # --- DEFINE YOUR TARGET UK HOURS HERE (24-hour format, space-separated) ---
+  PLAYWRIGHT_BROWSERS_PATH: /opt/playwright
+  # DEFINE YOUR TARGET UK HOURS HERE (24-hour format)
   # The main job will only run if the current UK hour is in this list.
-  # Example: '08 12 16' for 8am, 12pm, and 4pm.
-  UK_TARGET_HOURS: '10 14 19'
+  UK_TARGET_HOURS: '10 14 15 20'
 
 jobs:
   # ==============================================================================
   # JOB 1: CHECK TIME
   # This job runs every hour, checks the current time in London, and decides
-  # whether the main 'scrape' job should run.
+  # whether the main 'scrape-and-submit' job should run.
   # ==============================================================================
   check-time:
     runs-on: ubuntu-latest
@@ -48,6 +48,7 @@ jobs:
           fi
 
           # Get the current hour in London timezone (e.g., "09", "10", "17")
+          # Use %H to ensure leading zeros so values match the UK_TARGET_HOURS list
           CURRENT_UK_HOUR=$(TZ="Europe/London" date +'%H')
 
           echo "Current UK hour is: ${CURRENT_UK_HOUR}"
@@ -62,63 +63,85 @@ jobs:
             echo "run_job=false" >> $GITHUB_OUTPUT
           fi
 
-  # ==============================================================================
+    # ==============================================================================
   # JOB 2: SCRAPE AND SUBMIT
-  # This is the main job. It will ONLY run if the 'check-time' job above
+  # This is your main job. It will ONLY run if the 'check-time' job above
   # determined that it's the correct time.
   # ==============================================================================
-  scrape:
+  scrape-and-submit:
     needs: check-time
     if: needs.check-time.outputs.run_job == 'true'
 
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
 
     steps:
-    - name: 1. Check out repository
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    - name: 2. Set up Python
+    - name: Cache pip
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         cache: 'pip'
 
-    - name: 3. Install Python dependencies
+    - name: Install Python dependencies
       run: pip install -r requirements.txt
 
-    - name: 4. Install Playwright browsers & dependencies
+    - name: Install Playwright browsers & deps
       run: python -m playwright install --with-deps chromium
 
-    - name: 5. Build config.json from Secrets
-      # This step is tailored for the secrets needed by inf.py
+    - name: Build runtime config from Secrets
+      # This step is now updated to include the target_store information
+      env:
+        LOGIN_URL:              ${{ secrets.LOGIN_URL }}
+        LOGIN_EMAIL:            ${{ secrets.LOGIN_EMAIL }}
+        LOGIN_PASSWORD:         ${{ secrets.LOGIN_PASSWORD }}
+        OTP_SECRET_KEY:         ${{ secrets.OTP_SECRET_KEY }}
+        CHAT_WEBHOOK_URL:       ${{ secrets.CHAT_WEBHOOK_URL }}
+        SUMMARY_CHAT_WEBHOOK_URL: ${{ secrets.SUMMARY_CHAT_WEBHOOK_URL }}
+        # --- NEW SECRETS ADDED HERE ---
+        TARGET_MERCHANT_ID:     ${{ secrets.TARGET_MERCHANT_ID }}
+        TARGET_MARKETPLACE_ID:  ${{ secrets.TARGET_MARKETPLACE_ID }}
+        TARGET_STORE_NAME:      ${{ secrets.TARGET_STORE_NAME }}
       run: |
-        echo '{
+        # This script now correctly builds the nested JSON object
+        cat > config.json <<JSON
+        {
           "debug": false,
-          "login_url": "https://sellercentral.amazon.co.uk/",
-          "login_email": "${{ secrets.LOGIN_EMAIL }}",
-          "login_password": "${{ secrets.LOGIN_PASSWORD }}",
-          "otp_secret_key": "${{ secrets.OTP_SECRET_KEY }}",
-          "inf_webhook_url": "${{ secrets.INF_WEBHOOK_URL }}",
+          "login_url":       "${LOGIN_URL}",
+          "login_email":     "${LOGIN_EMAIL}",
+          "login_password":  "${LOGIN_PASSWORD}",
+          "otp_secret_key":  "${OTP_SECRET_KEY}",
+          "chat_webhook_url": "${CHAT_WEBHOOK_URL}",
+          "summary_chat_webhook_url": "${SUMMARY_CHAT_WEBHOOK_URL}",
           "target_store": {
-            "store_name": "${{ secrets.TARGET_STORE_NAME }}",
-            "merchant_id": "${{ secrets.TARGET_MERCHANT_ID }}",
-            "marketplace_id": "${{ secrets.TARGET_MARKETPLACE_ID }}"
+            "merchant_id": "${TARGET_MERCHANT_ID}",
+            "marketplace_id": "${TARGET_MARKETPLACE_ID}",
+            "store_name": "${TARGET_STORE_NAME}"
           }
-        }' > config.json
+        }
+        JSON
 
-    - name: 6. Run the INF scraper
-      # Changed to run inf.py
-      run: python inf.py
+    - name: Run scraper
+      # The script name in your repo is scraper.py, so ensure this matches.
+      # Based on your previous files, the main script is `scraper.py`, not `main.py`.
+      run: python scraper.py
 
-    - name: 7. Upload artifacts on failure or success
-      # This allows you to download logs/output for debugging
+    - name: Upload artifacts on failure or success
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: inf-scraper-output-${{ github.run_id }}
+        name: scraper-output-${{ github.run_id }}
         path: |
           output/
-          inf_app.log
+          app.log
           state.json
         retention-days: 7
