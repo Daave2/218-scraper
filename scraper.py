@@ -1,9 +1,8 @@
 # =======================================================================================
-#         AMAZON SELLER CENTRAL SCRAPER (FINAL VERSION V3.6 - WIDGET FIX)
+#         AMAZON SELLER CENTRAL SCRAPER (FINAL VERSION V3.7 – ENHANCED LOGIN)
 # =======================================================================================
-# This version replaces the fragile text-padding alignment with a robust,
-# widget-based approach (`decoratedText`) for the per-shopper breakdown.
-# This guarantees a clean, readable layout on both desktop and mobile.
+# - Swapped in the robust login & session checks from the INF-items scraper
+# - Retained widget-based decoratedText output for per-shopper breakdown
 # =======================================================================================
 
 import logging
@@ -28,7 +27,6 @@ import aiohttp
 import aiofiles
 import ssl
 import certifi
-import io
 
 # Use UK timezone for log timestamps
 LOCAL_TIMEZONE = timezone('Europe/London')
@@ -61,131 +59,164 @@ except FileNotFoundError:
     app_logger.critical("config.json not found. Please create it before running.")
     exit(1)
 
-DEBUG_MODE       = config.get('debug', False)
-LOGIN_URL        = config['login_url']
-CHAT_WEBHOOK_URL = config.get('chat_webhook_url')
+DEBUG_MODE               = config.get('debug', False)
+LOGIN_URL                = config['login_url']
+CHAT_WEBHOOK_URL         = config.get('chat_webhook_url')
 SUMMARY_CHAT_WEBHOOK_URL = config.get('summary_chat_webhook_url')
-TARGET_STORE     = config['target_store']
+TARGET_STORE             = config['target_store']
 
 # --- Emojis and Colors for Chat ---
-EMOJI_GREEN_CHECK = "\u2705" # ✅
-EMOJI_RED_CROSS = "\u274C"   # ❌
-COLOR_GOOD = "#2E8B57"  # A nice green (SeaGreen)
-COLOR_BAD = "#CD5C5C"   # A softer red (IndianRed)
+EMOJI_GREEN_CHECK = "\u2705"  # ✅
+EMOJI_RED_CROSS   = "\u274C"  # ❌
+COLOR_GOOD        = "#2E8B57" 
+COLOR_BAD         = "#CD5C5C"
 
-UPH_THRESHOLD = 80
+UPH_THRESHOLD    = 80
 LATES_THRESHOLD = 3.0
-INF_THRESHOLD = 2.0
+INF_THRESHOLD   = 2.0
 
-JSON_LOG_FILE   = os.path.join('output', 'submissions.jsonl')
-STORAGE_STATE   = 'state.json'
-OUTPUT_DIR      = 'output'
+JSON_LOG_FILE = os.path.join('output', 'submissions.jsonl')
+STORAGE_STATE  = 'state.json'
+OUTPUT_DIR     = 'output'
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-PAGE_TIMEOUT    = 90000
-ACTION_TIMEOUT  = 30000
-WAIT_TIMEOUT    = 20000
+PAGE_TIMEOUT       = 90_000
+ACTION_TIMEOUT     = 45_000
+WAIT_TIMEOUT       = 45_000
 WORKER_RETRY_COUNT = 3
 
 playwright = None
-browser = None
-log_lock = asyncio.Lock()
+browser    = None
+log_lock   = asyncio.Lock()
 
 
-# --- Utility Functions ---
+# =======================================================================================
+#    AUTHENTICATION & SESSION MANAGEMENT (ENHANCED)
+# =======================================================================================
+
 async def _save_screenshot(page: Page | None, prefix: str):
-    if not page or page.is_closed(): return
+    if not page or page.is_closed():
+        return
     try:
-        path = os.path.join(OUTPUT_DIR, f"{prefix}_{datetime.now(LOCAL_TIMEZONE).strftime('%Y%m%d_%H%M%S')}.png")
+        path = os.path.join(
+            OUTPUT_DIR,
+            f"{prefix}_{datetime.now(LOCAL_TIMEZONE).strftime('%Y%m%d_%H%M%S')}.png"
+        )
         await page.screenshot(path=path, full_page=True, timeout=15000)
-        app_logger.info(f"Screenshot saved for debugging: {path}")
+        app_logger.info(f"Screenshot saved: {path}")
     except Exception as e:
-        app_logger.error(f"Failed to save screenshot with prefix '{prefix}': {e}")
+        app_logger.error(f"Screenshot error: {e}")
 
-def ensure_storage_state():
-    if not os.path.exists(STORAGE_STATE) or os.path.getsize(STORAGE_STATE) == 0: return False
+def ensure_storage_state() -> bool:
+    if not os.path.exists(STORAGE_STATE) or os.path.getsize(STORAGE_STATE) == 0:
+        return False
     try:
-        with open(STORAGE_STATE) as f: data = json.load(f)
-        return isinstance(data, dict) and "cookies" in data and data["cookies"]
-    except json.JSONDecodeError:
+        data = json.load(open(STORAGE_STATE))
+        return isinstance(data, dict) and data.get("cookies")
+    except:
         return False
 
-# --- Authentication ---
 async def check_if_login_needed(page: Page, test_url: str) -> bool:
-    app_logger.info(f"Verifying session status by navigating to: {test_url}")
+    """Navigate to a protected page and see if we get redirected to sign-in."""
     try:
         await page.goto(test_url, timeout=PAGE_TIMEOUT, wait_until="load")
-        if "signin" in page.url.lower() or "/ap/" in page.url: return True
-        await expect(page.locator("#content")).to_be_visible(timeout=WAIT_TIMEOUT)
-        app_logger.info("Session check successful.")
+        if "signin" in page.url.lower() or "/ap/" in page.url:
+            app_logger.info("Session invalid, login required.")
+            return True
+        await expect(page.locator("#range-selector")).to_be_visible(timeout=WAIT_TIMEOUT)
+        app_logger.info("Existing session still valid.")
         return False
-    except Exception as e:
-        app_logger.error(f"Error during session check: {e}", exc_info=DEBUG_MODE)
+    except Exception:
+        app_logger.warning("Error verifying session; assuming login required.")
         return True
 
 async def perform_login(page: Page) -> bool:
-    app_logger.info(f"Navigating to login page: {LOGIN_URL}")
+    """Perform the full email → password → OTP flow, with account‐picker detection."""
+    app_logger.info("Starting login flow")
     try:
         await page.goto(LOGIN_URL, timeout=PAGE_TIMEOUT, wait_until="load")
+        cont_input = 'input[type="submit"][aria-labelledby="continue-announce"]'
+        cont_btn   = 'button:has-text("Continue shopping")'
+        email_sel  = 'input#ap_email'
+        await page.wait_for_selector(f"{cont_input}, {cont_btn}, {email_sel}", timeout=ACTION_TIMEOUT)
+        if await page.locator(cont_input).is_visible():
+            await page.locator(cont_input).click()
+        elif await page.locator(cont_btn).is_visible():
+            await page.locator(cont_btn).click()
+
+        await expect(page.locator(email_sel)).to_be_visible(timeout=WAIT_TIMEOUT)
         await page.get_by_label("Email or mobile phone number").fill(config['login_email'])
         await page.get_by_label("Continue").click()
-        await page.get_by_label("Password").fill(config['login_password'])
+
+        pw = page.get_by_label("Password")
+        await expect(pw).to_be_visible(timeout=WAIT_TIMEOUT)
+        await pw.fill(config['login_password'])
         await page.get_by_label("Sign in").click()
-        
-        otp_selector = 'input[id*="otp"]'
-        dashboard_selector = "#content"
-        await page.wait_for_selector(f"{otp_selector}, {dashboard_selector}", timeout=30000)
 
-        if await page.locator(otp_selector).is_visible():
-            app_logger.info("OTP is required.")
-            otp_code = pyotp.TOTP(config['otp_secret_key']).now()
-            await page.locator(otp_selector).fill(otp_code)
+        otp_sel  = 'input[id*="otp"]'
+        dash_sel = "#content"
+        acct_sel = 'h1:has-text("Select an account")'
+        await page.wait_for_selector(f"{otp_sel}, {dash_sel}, {acct_sel}", timeout=WAIT_TIMEOUT)
+
+        if await page.locator(otp_sel).is_visible():
+            code = pyotp.TOTP(config['otp_secret_key']).now()
+            await page.locator(otp_sel).fill(code)
             await page.get_by_role("button", name="Sign in").click()
+            await page.wait_for_selector(f"{dash_sel}, {acct_sel}", timeout=WAIT_TIMEOUT)
 
-        await page.wait_for_selector(dashboard_selector, timeout=30000)
-        app_logger.info("Login process appears successful.")
+        if await page.locator(acct_sel).is_visible():
+            app_logger.error("Account-picker shown; unhandled.")
+            await _save_screenshot(page, "login_account_picker")
+            return False
+
+        await expect(page.locator(dash_sel)).to_be_visible(timeout=WAIT_TIMEOUT)
+        app_logger.info("Login successful.")
         return True
+
     except Exception as e:
-        app_logger.critical(f"Critical error during login: {e}", exc_info=DEBUG_MODE)
-        await _save_screenshot(page, "login_critical_failure")
+        app_logger.critical(f"Login failed: {e}", exc_info=DEBUG_MODE)
+        await _save_screenshot(page, "login_failure")
         return False
 
 async def prime_master_session() -> bool:
+    """Open a fresh context, login, and write storage_state."""
     global browser
     app_logger.info("Priming master session")
     ctx = await browser.new_context()
     try:
         page = await ctx.new_page()
-        if not await perform_login(page): return False
+        if not await perform_login(page):
+            return False
         await ctx.storage_state(path=STORAGE_STATE)
-        app_logger.info(f"Login successful. Auth state saved to '{STORAGE_STATE}'.")
+        app_logger.info("Saved new session state.")
         return True
     finally:
         await ctx.close()
 
 
-# --- Core Logic ---
+# =======================================================================================
+#                       UTILITIES & CORE SCRAPING LOGIC
+# =======================================================================================
+
 def _format_metric_with_emoji(value_str: str, threshold: float, is_uph: bool = False) -> str:
     try:
         numeric_value = float(re.sub(r'[^\d.]', '', value_str))
         is_good = (numeric_value >= threshold) if is_uph else (numeric_value <= threshold)
         emoji = EMOJI_GREEN_CHECK if is_good else EMOJI_RED_CROSS
         return f"{value_str} {emoji}"
-    except (ValueError, TypeError):
+    except:
         return value_str
         
 def _format_metric_with_color(value_str: str, threshold: float, is_uph: bool = False) -> str:
-    """Formats a metric string with red/green font color based on a threshold."""
     try:
         numeric_value = float(re.sub(r'[^\d.]', '', value_str))
         is_good = (numeric_value >= threshold) if is_uph else (numeric_value <= threshold)
         color = COLOR_GOOD if is_good else COLOR_BAD
         return f'<font color="{color}">{value_str}</font>'
-    except (ValueError, TypeError):
+    except:
         return value_str
 
 async def log_results(data: dict):
-    """Writes results to local log files."""
     async with log_lock:
         log_entry = {'timestamp': datetime.now(LOCAL_TIMEZONE).strftime('%Y-%m-%d %H:%M:%S'), **data}
         try:
@@ -308,7 +339,6 @@ async def scrape_store_data(browser: Browser, store_info: dict, storage_state: d
                 'inf': f"{overall_inf:.1f} %",
                 'lates': f"{overall_lates:.1f} %"
             }
-            # Sort shoppers by their INF percentage, lowest to highest
             sorted_shoppers = sorted(
                 shopper_stats,
                 key=lambda x: float(x["inf"].replace("%", "").strip())
@@ -329,7 +359,6 @@ async def scrape_store_data(browser: Browser, store_info: dict, storage_state: d
     return None
 
 async def post_to_chat_webhook(data: dict):
-    """Sends a rich card using decoratedText widgets for a clean, mobile-friendly layout."""
     if not CHAT_WEBHOOK_URL:
         return
 
@@ -339,36 +368,31 @@ async def post_to_chat_webhook(data: dict):
         return
 
     store_name = overall.get("store", "Unknown Store")
-    timestamp = datetime.now(LOCAL_TIMEZONE).strftime("%A %d %B, %H:%M")
-    runtime = datetime.now(LOCAL_TIMEZONE).strftime("%H:%M")
+    timestamp  = datetime.now(LOCAL_TIMEZONE).strftime("%A %d %B, %H:%M")
+    runtime    = datetime.now(LOCAL_TIMEZONE).strftime("%H:%M")
     
-    summary_text = (f"  •  <b>UPH (Store Avg):</b> {_format_metric_with_emoji(overall.get('uph'), UPH_THRESHOLD, is_uph=True)}<br>"
-                    f"  •  <b>Lates (Store Avg):</b> {_format_metric_with_emoji(overall.get('lates'), LATES_THRESHOLD)}<br>"
-                    f"  •  <b>INF (Store Avg):</b> {_format_metric_with_emoji(overall.get('inf'), INF_THRESHOLD)}<br>"
-                    f"  •  <b>Total Orders:</b> {overall.get('orders')}<br>"
-                    f"  •  <b>Total Units:</b> {overall.get('units')}")
+    summary_text = (
+        f"  •  <b>UPH (Store Avg):</b> {_format_metric_with_emoji(overall.get('uph'), UPH_THRESHOLD, is_uph=True)}<br>"
+        f"  •  <b>Lates (Store Avg):</b> {_format_metric_with_emoji(overall.get('lates'), LATES_THRESHOLD)}<br>"
+        f"  •  <b>INF (Store Avg):</b> {_format_metric_with_emoji(overall.get('inf'), INF_THRESHOLD)}<br>"
+        f"  •  <b>Total Orders:</b> {overall.get('orders')}<br>"
+        f"  •  <b>Total Units:</b> {overall.get('units')}"
+    )
 
-    # --- Build the per-shopper breakdown using a list of decoratedText widgets ---
     shopper_widgets = []
     for s in shoppers:
-        # Format each metric with its label and color, then combine them.
-        uph_formatted = _format_metric_with_color(f"<b>UPH:</b> {s['uph']}", UPH_THRESHOLD, is_uph=True)
-        inf_formatted = _format_metric_with_color(f"<b>INF:</b> {s['inf']}", INF_THRESHOLD)
-        lates_formatted = _format_metric_with_color(f"<b>Lates:</b> {s['lates']}", LATES_THRESHOLD)
-        
-        metrics_text = f"{uph_formatted} | {inf_formatted} | {lates_formatted}"
-        
-        # Each shopper gets their own widget object.
-        widget = {
+        uph_fmt   = _format_metric_with_color(f"<b>UPH:</b> {s['uph']}", UPH_THRESHOLD, is_uph=True)
+        inf_fmt   = _format_metric_with_color(f"<b>INF:</b> {s['inf']}", INF_THRESHOLD)
+        lates_fmt = _format_metric_with_color(f"<b>Lates:</b> {s['lates']}", LATES_THRESHOLD)
+        metrics_text = f"{uph_fmt} | {inf_fmt} | {lates_fmt}"
+        shopper_widgets.append({
             "decoratedText": {
                 "icon": {"knownIcon": "PERSON"},
                 "topLabel": f"<b>{s['name']}</b> ({s['orders']} Orders)",
                 "text": metrics_text
             }
-        }
-        shopper_widgets.append(widget)
+        })
 
-    # Construct the final payload
     payload = {
         "cardsV2": [{
             "cardId": f"store-summary-{store_name.replace(' ', '-')}",
@@ -388,7 +412,7 @@ async def post_to_chat_webhook(data: dict):
                         "header": f"Per-Shopper Breakdown ({len(shoppers)} Active)",
                         "collapsible": True,
                         "uncollapsibleWidgetsCount": 0,
-                        "widgets": shopper_widgets  # Insert the list of widgets here
+                        "widgets": shopper_widgets
                     }
                 ]
             }
@@ -397,17 +421,16 @@ async def post_to_chat_webhook(data: dict):
 
     try:
         timeout = aiohttp.ClientTimeout(total=30)
-        ssl_context = ssl.create_default_context(cafile=certifi.where())
-        async with aiohttp.ClientSession(timeout=timeout, connector=aiohttp.TCPConnector(ssl=ssl_context)) as session:
+        ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+        async with aiohttp.ClientSession(timeout=timeout, connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as session:
             async with session.post(CHAT_WEBHOOK_URL, json=payload) as resp:
                 if resp.status != 200:
-                    error_text = await resp.text()
-                    app_logger.error(f"Chat webhook failed. Status: {resp.status}, Response: {error_text}")
+                    err = await resp.text()
+                    app_logger.error(f"Chat webhook failed. Status: {resp.status}, Response: {err}")
     except Exception as e:
         app_logger.error(f"Error posting to chat webhook: {e}", exc_info=True)
 
 async def post_summary_webhook(data: dict):
-    """Send only the overall metrics to the secondary webhook."""
     if not SUMMARY_CHAT_WEBHOOK_URL:
         return
 
@@ -417,8 +440,8 @@ async def post_summary_webhook(data: dict):
         return
 
     store_name = overall.get("store", "Unknown Store")
-    timestamp = datetime.now(LOCAL_TIMEZONE).strftime("%A %d %B, %H:%M")
-    runtime = datetime.now(LOCAL_TIMEZONE).strftime("%H:%M")
+    timestamp  = datetime.now(LOCAL_TIMEZONE).strftime("%A %d %B, %H:%M")
+    runtime    = datetime.now(LOCAL_TIMEZONE).strftime("%H:%M")
 
     summary_text = (
         f"  •  <b>UPH (Store Avg):</b> {_format_metric_with_emoji(overall.get('uph'), UPH_THRESHOLD, is_uph=True)}<br>"
@@ -450,30 +473,45 @@ async def post_summary_webhook(data: dict):
 
     try:
         timeout = aiohttp.ClientTimeout(total=30)
-        ssl_context = ssl.create_default_context(cafile=certifi.where())
-        async with aiohttp.ClientSession(timeout=timeout, connector=aiohttp.TCPConnector(ssl=ssl_context)) as session:
+        ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+        async with aiohttp.ClientSession(timeout=timeout, connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as session:
             async with session.post(SUMMARY_CHAT_WEBHOOK_URL, json=payload) as resp:
                 if resp.status != 200:
-                    error_text = await resp.text()
-                    app_logger.error(f"Summary webhook failed. Status: {resp.status}, Response: {error_text}")
+                    err = await resp.text()
+                    app_logger.error(f"Summary webhook failed. Status: {resp.status}, Response: {err}")
     except Exception as e:
         app_logger.error(f"Error posting to summary webhook: {e}", exc_info=True)
 
 
 async def main():
     global playwright, browser
-    app_logger.info("Starting up in simplified single-store mode...")
-    
+    app_logger.info("Starting up in single-store mode...")
+
     try:
         playwright = await async_playwright().start()
-        browser = await playwright.chromium.launch(headless=not DEBUG_MODE)
-        if not ensure_storage_state():
-             if not await prime_master_session():
-                app_logger.critical("Fatal: Could not establish a login session. Aborting.")
+        browser    = await playwright.chromium.launch(headless=not DEBUG_MODE)
+
+        # Check or establish login session
+        login_required = True
+        if ensure_storage_state():
+            app_logger.info("Found existing storage_state; verifying session")
+            ctx = await browser.new_context(storage_state=json.load(open(STORAGE_STATE)))
+            pg  = await ctx.new_page()
+            test_url = (
+                f"https://sellercentral.amazon.co.uk/snowdash"
+                f"?mons_sel_dir_mcid={TARGET_STORE['merchant_id']}"
+                f"&mons_sel_mkid={TARGET_STORE['marketplace_id']}"
+            )
+            login_required = await check_if_login_needed(pg, test_url)
+            await ctx.close()
+
+        if login_required:
+            if not await prime_master_session():
+                app_logger.critical("Could not establish a login session. Aborting.")
                 return
-        with open(STORAGE_STATE) as f:
-            storage_state = json.load(f)
-        scraped_data = await scrape_store_data(browser, TARGET_STORE, storage_state)
+
+        storage_state = json.load(open(STORAGE_STATE))
+        scraped_data  = await scrape_store_data(browser, TARGET_STORE, storage_state)
         if scraped_data:
             await log_results(scraped_data)
             await post_to_chat_webhook(scraped_data)
@@ -481,12 +519,15 @@ async def main():
             app_logger.info("Run completed successfully.")
         else:
             app_logger.error("Run failed: Could not retrieve data for the target store.")
+
     except Exception as e:
         app_logger.critical(f"A critical error occurred in main execution: {e}", exc_info=True)
     finally:
         app_logger.info("Shutting down...")
-        if browser: await browser.close()
-        if playwright: await playwright.stop()
+        if browser:
+            await browser.close()
+        if playwright:
+            await playwright.stop()
         app_logger.info("Shutdown complete.")
 
 if __name__ == "__main__":

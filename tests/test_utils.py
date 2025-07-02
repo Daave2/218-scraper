@@ -2,7 +2,6 @@ import json
 import asyncio
 from pathlib import Path
 
-import pytest
 import types
 
 from test_formatting import scraper_module
