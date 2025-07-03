@@ -170,9 +170,17 @@ async def perform_login(page: Page) -> bool:
             await page.wait_for_selector(f"{dash_sel}, {acct_sel}", timeout=WAIT_TIMEOUT)
 
         if await page.locator(acct_sel).is_visible():
-            app_logger.error("Account-picker shown; unhandled.")
+            app_logger.info("Account-picker shown; navigating to target store.")
+            dash_url = (
+                f"https://sellercentral.amazon.co.uk/snowdash"
+                f"?mons_sel_dir_mcid={TARGET_STORE['merchant_id']}"
+                f"&mons_sel_mkid={TARGET_STORE['marketplace_id']}"
+            )
+            await page.goto(dash_url, timeout=PAGE_TIMEOUT)
+            await expect(page.locator(dash_sel)).to_be_visible(timeout=WAIT_TIMEOUT)
             await _save_screenshot(page, "login_account_picker")
-            return False
+            app_logger.info("Navigated to store from account-picker page.")
+            return True
 
         await expect(page.locator(dash_sel)).to_be_visible(timeout=WAIT_TIMEOUT)
         app_logger.info("Login successful.")
