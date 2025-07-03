@@ -105,15 +105,20 @@ async def _save_screenshot(page: Page | None, prefix: str):
         await page.screenshot(path=path, full_page=True, timeout=15000)
         app_logger.info(f"Screenshot saved: {path}")
     except Exception as e:
-        app_logger.error(f"Screenshot error: {e}")
+        app_logger.error(f"Failed to save screenshot: {e}")
 
-def ensure_storage_state() -> bool:
+def ensure_storage_state() -> list | bool:
+    """Return stored cookies or False if the storage state is invalid."""
     if not os.path.exists(STORAGE_STATE) or os.path.getsize(STORAGE_STATE) == 0:
         return False
     try:
-        data = json.load(open(STORAGE_STATE))
-        return isinstance(data, dict) and data.get("cookies")
-    except:
+        with open(STORAGE_STATE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        cookies = data.get("cookies") if isinstance(data, dict) else None
+        if isinstance(cookies, list) and cookies:
+            return cookies
+        return False
+    except Exception:
         return False
 
 async def check_if_login_needed(page: Page, test_url: str) -> bool:
