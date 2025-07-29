@@ -92,6 +92,21 @@ CUSTOMISED_TAB_SELECTOR = (
     "div > div > div > div > span:nth-child(4)"
 )
 
+# Some pages use slightly different markup for the "Customised" tab. We try
+# multiple selectors in order so the scraper keeps working even if the DOM
+# changes.
+CUSTOMISED_TAB_SELECTORS = [
+    CUSTOMISED_TAB_SELECTOR,
+    "span:has-text(\"Customised\")",
+]
+
+# Potential selectors for the date range widget. The site markup occasionally
+# changes, so we try each selector in order until one matches.
+DATE_PICKER_SELECTORS = [
+    "kat-date-range-picker",
+    "kat-dashboard-date-range-picker",
+]
+
 playwright = None
 browser    = None
 log_lock   = asyncio.Lock()
@@ -236,6 +251,30 @@ def _format_metric_with_color(value_str: str, threshold: float, is_uph: bool = F
     except:
         return value_str
 
+
+async def _wait_for_date_picker(page: Page):
+    """Return the first matching date picker locator."""
+    for selector in DATE_PICKER_SELECTORS:
+        locator = page.locator(selector)
+        try:
+            await expect(locator).to_be_visible(timeout=WAIT_TIMEOUT)
+            return locator
+        except AssertionError:
+            continue
+    raise AssertionError("Date picker not found with known selectors")
+
+
+async def _find_customised_tab(page: Page):
+    """Return the first matching locator for the Customised dashboard tab."""
+    for selector in CUSTOMISED_TAB_SELECTORS:
+        locator = page.locator(selector)
+        try:
+            await expect(locator).to_be_visible(timeout=WAIT_TIMEOUT)
+            return locator
+        except AssertionError:
+            continue
+    raise AssertionError("Customised tab not found with known selectors")
+
 async def log_results(data: dict):
     async with log_lock:
         log_entry = {'timestamp': datetime.now(LOCAL_TIMEZONE).strftime('%Y-%m-%d %H:%M:%S'), **data}
@@ -271,9 +310,9 @@ async def scrape_store_data(browser: Browser, store_info: dict, storage_state: d
             await expect(refresh_button).to_be_visible(timeout=WAIT_TIMEOUT)
             app_logger.info("Dashboard is ready.")
 
-            # STEP 2: Click the "Customised" tab via your precise CSS selector
-            customised_tab = page.locator(CUSTOMISED_TAB_SELECTOR)
-            await expect(customised_tab).to_be_visible(timeout=WAIT_TIMEOUT)
+            # STEP 2: Click the "Customised" tab, trying multiple selectors to
+            # handle markup variations.
+            customised_tab = await _find_customised_tab(page)
             await customised_tab.scroll_into_view_if_needed(timeout=ACTION_TIMEOUT)
             # Use force=True to ensure the click registers even if another
             # element briefly covers the tab.
@@ -284,9 +323,9 @@ async def scrape_store_data(browser: Browser, store_info: dict, storage_state: d
             # the saved screenshot showed the page before this click occurred.
             await _save_screenshot(page, f"{store_name}_after_customised")
 
-            # STEP 3: Wait for the date-range picker to appear
-            date_picker = page.locator("kat-date-range-picker")
-            await expect(date_picker).to_be_visible(timeout=WAIT_TIMEOUT)
+            # STEP 3: Wait for the date-range picker to appear. We support
+            # multiple selectors to handle minor DOM changes.
+            date_picker = await _wait_for_date_picker(page)
             app_logger.info("Date-range picker is visible.")
 
             # STEP 4: Fill in today's date for both start and end
