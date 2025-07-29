@@ -273,6 +273,10 @@ async def scrape_store_data(browser: Browser, store_info: dict, storage_state: d
             await customised_tab.scroll_into_view_if_needed(timeout=ACTION_TIMEOUT)
             await customised_tab.click(timeout=ACTION_TIMEOUT)
             app_logger.info("Clicked 'Customised' tab.")
+            # Capture a screenshot immediately after clicking the tab to help
+            # diagnose issues where the date picker fails to appear. Previously
+            # the saved screenshot showed the page before this click occurred.
+            await _save_screenshot(page, f"{store_name}_after_customised")
 
             # STEP 3: Wait for the date-range picker to appear
             date_picker = page.locator("kat-date-range-picker")
