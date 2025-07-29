@@ -314,6 +314,9 @@ async def scrape_store_data(browser: Browser, store_info: dict, storage_state: d
             # handle markup variations.
             customised_tab = await _find_customised_tab(page)
             await customised_tab.scroll_into_view_if_needed(timeout=ACTION_TIMEOUT)
+            # The tab isn't always immediately clickable after the dashboard
+            # appears, so wait briefly before clicking.
+            await page.wait_for_timeout(5000)
             # Use force=True to ensure the click registers even if another
             # element briefly covers the tab.
             await customised_tab.click(timeout=ACTION_TIMEOUT, force=True)
