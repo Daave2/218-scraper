@@ -85,6 +85,13 @@ ACTION_TIMEOUT     = 45_000
 WAIT_TIMEOUT       = 45_000
 WORKER_RETRY_COUNT = 3
 
+# CSS selector for the "Customised" dashboard tab. This is kept explicit so if
+# Amazon changes their DOM we can easily update the selector in one place.
+CUSTOMISED_TAB_SELECTOR = (
+    "#content > div > div.mainAppContainerExternal > div.paddingTop > "
+    "div > div > div > div > span:nth-child(4)"
+)
+
 playwright = None
 browser    = None
 log_lock   = asyncio.Lock()
@@ -265,10 +272,12 @@ async def scrape_store_data(browser: Browser, store_info: dict, storage_state: d
             app_logger.info("Dashboard is ready.")
 
             # STEP 2: Click the "Customised" tab via your precise CSS selector
-            customised_tab = page.get_by_text("Customised")
+            customised_tab = page.locator(CUSTOMISED_TAB_SELECTOR)
             await expect(customised_tab).to_be_visible(timeout=WAIT_TIMEOUT)
             await customised_tab.scroll_into_view_if_needed(timeout=ACTION_TIMEOUT)
-            await customised_tab.click(timeout=ACTION_TIMEOUT)
+            # Use force=True to ensure the click registers even if another
+            # element briefly covers the tab.
+            await customised_tab.click(timeout=ACTION_TIMEOUT, force=True)
             app_logger.info("Clicked 'Customised' tab.")
             # Capture a screenshot immediately after clicking the tab to help
             # diagnose issues where the date picker fails to appear. Previously
